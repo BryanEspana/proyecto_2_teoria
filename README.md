@@ -1,6 +1,8 @@
 ## Proyecto de Procesamiento de Gramáticas y Algoritmo CYK
 ## Bryan España - 21550
 
+VIDEO COMPLETO:  https://youtu.be/0f8WXOR2zO8
+
 Este proyecto implementa una serie de transformaciones para convertir una gramática a Forma Normal de Chomsky (CNF) y utiliza el Algoritmo CYK para verificar si una cadena pertenece a la gramática. Está diseñado para trabajar con gramáticas libres de contexto, que pueden incluir producciones epsilon (`ε`) y producciones unitarias, y sigue una serie de pasos para limpiar y convertir la gramática antes de realizar el análisis con el Algoritmo CYK.
 
 ### Descripción General de Archivos
