@@ -6,6 +6,7 @@ class ProcesadorGramatica:
         self.TERMINALS = set()
         self.NON_TERMINALS = set()
         self.pattern = re.compile(r'[A-Z]+\s*→\s*([A-Za-z0-9ε\s\|\(\)\+\*]+)')
+        self.start_symbol = None 
 
     def leer_gramatica(self, file_content):
         """Lee la gramática desde un string y la convierte a diccionario."""
@@ -17,9 +18,11 @@ class ProcesadorGramatica:
 
             non_terminal, productions = line.split('→')
             non_terminal = non_terminal.strip()
+            if self.start_symbol is None:
+                self.start_symbol = non_terminal
+
             self.NON_TERMINALS.add(non_terminal)
             
-            # Manejar las producciones separadas por |
             productions = [p.strip() for p in productions.split('|')]
             
             if non_terminal in grammar:
@@ -27,7 +30,6 @@ class ProcesadorGramatica:
             else:
                 grammar[non_terminal] = productions
 
-            # Identificar terminales
             for prod in productions:
                 symbols = prod.split()
                 for symbol in symbols:
@@ -66,13 +68,12 @@ class ProcesadorGramatica:
                 symbols = prod.split()
                 nullable_positions = [i for i, sym in enumerate(symbols) if sym in nullable]
                 
-                # Generar todas las combinaciones posibles de eliminación
                 for r in range(len(nullable_positions) + 1):
                     for combo in combinations(nullable_positions, r):
                         new_prod = ' '.join(sym for i, sym in enumerate(symbols) if i not in combo)
-                        if new_prod:  # No agregar producciones vacías
+                        if new_prod: 
                             new_productions.add(new_prod)
-                        elif nt in nullable:  # Si el no terminal es anulable, mantener ε
+                        elif nt in nullable: 
                             new_productions.add('ε')
                             
             new_grammar[nt] = list(new_productions) if new_productions else productions
@@ -81,7 +82,6 @@ class ProcesadorGramatica:
 
     def eliminar_produccion_unitaria(self, grammar):
         """Elimina las producciones unitarias preservando la equivalencia."""
-        # Encontrar todos los pares unitarios
         unit_pairs = {(nt, nt) for nt in grammar}
         changed = True
         
@@ -95,7 +95,6 @@ class ProcesadorGramatica:
                                 unit_pairs.add((nt, pair[1]))
                                 changed = True
 
-        # Construir nueva gramática
         new_grammar = {nt: [] for nt in grammar}
         for nt, productions in grammar.items():
             for prod in productions:
@@ -107,14 +106,22 @@ class ProcesadorGramatica:
 
         return new_grammar
 
-    def eliminar_no_generados(self, grammar, start_symbol='S'):
+    def eliminar_no_generados(self, grammar):
         """Elimina símbolos no generadores y no alcanzables."""
+        # Usar el símbolo inicial detectado
+        start_symbol = self.start_symbol
+
         # Encontrar símbolos generadores
         generating = set()
         changed = True
-        
+        iteration_count = 0  # Contador de iteraciones para depuración
+
+        print("Inicio de eliminación de símbolos no generadores")
+
         while changed:
             changed = False
+            iteration_count += 1
+            print(f"Iteración {iteration_count} para encontrar generadores")
             for nt, productions in grammar.items():
                 if nt not in generating:
                     for prod in productions:
@@ -122,17 +129,31 @@ class ProcesadorGramatica:
                         if all(s in self.TERMINALS or s in generating for s in symbols):
                             generating.add(nt)
                             changed = True
+                            print(f"Símbolo generador agregado: {nt}")
+            if iteration_count > 50:  # Limitar las iteraciones para evitar bucles infinitos durante las pruebas
+                print("Se ha alcanzado el límite de iteraciones para encontrar generadores.")
+                break
+
+        print("Símbolos generadores:", generating)
 
         # Eliminar no generadores
         new_grammar = {nt: [p for p in prods if all(s in self.TERMINALS or s in generating 
-                          for s in p.split())]
-                      for nt, prods in grammar.items() if nt in generating}
+                        for s in p.split())]
+                    for nt, prods in grammar.items() if nt in generating}
+
+        print("Gramática después de eliminar no generadores:", new_grammar)
 
         # Encontrar símbolos alcanzables
         reachable = {start_symbol}
         changed = True
+        iteration_count = 0  # Reiniciar el contador para el proceso de alcanzables
+
+        print("Inicio de eliminación de símbolos no alcanzables")
+
         while changed:
             changed = False
+            iteration_count += 1
+            print(f"Iteración {iteration_count} para encontrar alcanzables")
             new_reachable = set()
             for nt in reachable:
                 if nt in new_grammar:
@@ -142,11 +163,21 @@ class ProcesadorGramatica:
                             if symbol in self.NON_TERMINALS and symbol not in reachable:
                                 new_reachable.add(symbol)
                                 changed = True
+                                print(f"Símbolo alcanzable agregado: {symbol}")
             reachable.update(new_reachable)
+            if iteration_count > 50:  # Limitar las iteraciones para evitar bucles infinitos durante las pruebas
+                print("Se ha alcanzado el límite de iteraciones para encontrar alcanzables.")
+                break
+
+        print("Símbolos alcanzables:", reachable)
 
         # Eliminar no alcanzables
-        return {nt: prods for nt, prods in new_grammar.items() if nt in reachable}
+        final_grammar = {nt: prods for nt, prods in new_grammar.items() if nt in reachable or nt == start_symbol}
 
+        print("Gramática final después de eliminar no alcanzables:", final_grammar)
+        return final_grammar
+
+    
     def convertir_CNF(self, grammar):
         """Convierte la gramática a Forma Normal de Chomsky."""
         new_grammar = {}
@@ -161,7 +192,6 @@ class ProcesadorGramatica:
             counter += 1
             return symbol
 
-        # Paso 1: Manejar terminales en producciones largas
         for nt, productions in grammar.items():
             new_productions = []
             for prod in productions:
@@ -183,7 +213,6 @@ class ProcesadorGramatica:
                     new_productions.append(prod)
             new_grammar[nt] = new_productions
 
-        # Paso 2: Dividir producciones largas
         final_grammar = {}
         for nt, productions in new_grammar.items():
             final_productions = []
@@ -197,32 +226,30 @@ class ProcesadorGramatica:
                 final_productions.append(' '.join(symbols))
             final_grammar[nt] = final_productions
 
+        print("Transformación CNF completa")  # Mensaje de depuración adicional
         return final_grammar
 
     def algoritmo_CYK(self, grammar, input_string):
-        """Implementa el algoritmo CYK con seguimiento de derivaciones."""
+        """Implementar el algoritmo CYK con seguimiento de derivaciones."""
         words = input_string.split()
         n = len(words)
         
         if n == 0:
             return False, []
 
-        # Inicializar tabla CYK
         table = [[set() for _ in range(n - i)] for i in range(n)]
         
-        # Llenar la diagonal (casos base)
         for i, word in enumerate(words):
             for nt, productions in grammar.items():
                 if word in productions:
                     table[0][i].add(nt)
-        
-        # Llenar el resto de la tabla
-        for l in range(1, n):  # longitud del span
-            for i in range(n - l):  # posición inicial
-                for k in range(l):  # punto de división
+
+        for l in range(1, n): 
+            for i in range(n - l): 
+                for k in range(l): 
                     for nt, productions in grammar.items():
                         for prod in productions:
-                            if ' ' in prod:  # solo producciones binarias
+                            if ' ' in prod:  
                                 B, C = prod.split()
                                 if B in table[k][i] and C in table[l-k-1][i+k+1]:
                                     table[l][i].add(nt)
@@ -231,16 +258,14 @@ class ProcesadorGramatica:
         for i, row in enumerate(table):
             print(f"Nivel {i}:", row)
         
-        return 'S' in table[n-1][0], table
+        return self.start_symbol in table[n-1][0], table
 
 def procesar_gramatica_completa(grammar_text):
     processor = ProcesadorGramatica()
     
-    # Procesar la gramática
     original_grammar = processor.leer_gramatica(grammar_text)
     print("Gramática original:", original_grammar)
     
-    # Aplicar transformaciones
     grammar = processor.eliminar_epsilon(original_grammar)
     print("\nDespués de eliminar ε:", grammar)
     
@@ -253,6 +278,10 @@ def procesar_gramatica_completa(grammar_text):
     grammar = processor.convertir_CNF(grammar)
     print("\nEn Forma Normal de Chomsky:", grammar)
     
+    if not grammar:
+        print("Error: La gramática está vacía después de la conversión a Forma Normal de Chomsky.")
+        return
+
     while True:
         print("\nIngrese una cadena para verificar (o 'salir' para terminar):")
         input_string = input().strip()
@@ -268,16 +297,19 @@ def procesar_gramatica_completa(grammar_text):
         print(f"Tiempo de ejecución: {end_time - start_time:.4f} segundos")
 
 if __name__ == "__main__":
-    # Ejemplo de uso
     grammar_text = """
-    S → NP VP
-    VP → VP PP | V NP | cooks | drinks | eats | cuts
-    PP → P NP
-    NP → Det N | he | she
-    V → cooks | drinks | eats | cuts
-    P → in | with
-    N → cat | dog | beer | cake | juice | meat | soup | fork | knife | oven | spoon
-    Det → a | the
+        E → T X | F Y | L Z | id
+        X → P W | P T
+        T → F Y | L Z | id
+        Y → M V | M F
+        F → L Z | id
+        Z → E R
+        W → T X
+        V → F Y
+        L → (
+        R → )
+        P → +
+        M → *
     """
     
     print("=== Procesador de Gramática y Verificador CYK ===")
